@@ -9,11 +9,12 @@ from telegram.ext import (
     filters,
 )
 
-# --- ১. গ্লোবাল কনফিগারেশন ও ডাটা (ওয়েব অ্যাপ কোড অনুযায়ী) ---
-BOT_TOKEN = "8868300612:AAH33rOPD7g-1s8dycSIdsNGZsOgZdPnqo0"  # আপনার টেলিগ্রাম বট টোকেন দিন
-WEB_APP_URL = "https://economyshops.blogspot.com"  # আপনার ওয়েব অ্যাপ লিঙ্ক
+# --- ১. কনফিগারেশন ---
+BOT_TOKEN = "8868300612:AAH33rOPD7g-1s8dycSIdsNGZsOgZdPnqo0"  # আপনার বট টোকেন দিন
+ADMIN_TELEGRAM_ID = 6582650458  # আপনার টেলিগ্রাম UID
+WEB_APP_URL = "https://economyshops.blogspot.com"
 
-# ওয়েব অ্যাপের ডিফল্ট কনফিগারেশন
+# ওয়েব অ্যাপ অনুযায়ী কয়েন কনফিগারেশন (মেমোরিতে সেভ থাকবে এবং এডমিন চেঞ্জ করতে পারবে)
 COIN_CONFIGS = {
     "niva": {"label": "Niva Coin", "price": 5, "target": "@sell_point_it", "active": True},
     "NewTop": {"label": "NewTop Coin", "price": 3, "target": "@Send", "active": True},
@@ -24,13 +25,14 @@ COIN_CONFIGS = {
 DEFAULT_FEE = 5
 MIN_AMOUNT = 50000
 
-# Logging
+# সাময়িকভাবে রিকোয়েস্ট ডাটা ট্র্যাকিংয়ের জন্য (Memory Store)
+pending_requests = {}
+
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
 
-# --- ২. মেনু তৈরি করার ফাংশনসমূহ ---
+# --- ২. ইউজার মেনু কিবোর্ড ---
 
 def get_main_keyboard():
-    """প্রধান ইনলাইন কিবোর্ড মেনু"""
     keyboard = [
         [
             InlineKeyboardButton("🛒 Sell Coins", callback_data="menu_sell"),
@@ -41,7 +43,6 @@ def get_main_keyboard():
             InlineKeyboardButton("📜 My History", callback_data="menu_history"),
         ],
         [
-            # WebApp Button: টেলিগ্রামের ভেতরেই ওয়েব অ্যাপ খোলার বাটন
             InlineKeyboardButton("🌐 Open Full Web App", web_app=WebAppInfo(url=WEB_APP_URL))
         ],
         [
@@ -51,33 +52,29 @@ def get_main_keyboard():
     ]
     return InlineKeyboardMarkup(keyboard)
 
-# --- ৩. কমান্ড এবং কলব্যাক হ্যান্ডলার ---
+# --- ৩. /start ও ইউজার ফাংশনসমূহ ---
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """/start কমান্ড দিলে মেইন মেনু দেখাবে"""
     user = update.effective_user
     welcome_text = (
         f"👋 **Earning Elevated**-এ আপনাকে স্বাগতম, {user.first_name}!\n\n"
         "এটি একটি নিরাপদ ও নির্ভরযোগ্য কয়েন বাই-সেল প্ল্যাটফর্ম। "
         "নিচের বাটনগুলো ব্যবহার করে খুব সহজেই লেনদেন করুন:"
     )
-    
     if update.message:
         await update.message.reply_text(welcome_text, reply_markup=get_main_keyboard(), parse_mode="Markdown")
     else:
         await update.callback_query.edit_message_text(welcome_text, reply_markup=get_main_keyboard(), parse_mode="Markdown")
 
 async def handle_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """বাটনে ক্লিক করলে যা ঘটবে"""
     query = update.callback_query
     await query.answer()
     data = query.data
+    user_id = query.from_user.id
 
-    # ১. মেইন মেনুতে ব্যাক
     if data == "main_menu":
         await start(update, context)
 
-    # ২. লাইভ রেট দেখা
     elif data == "menu_rates":
         rates_text = "📊 **Live Market Rates (প্রতি ১০০০ কয়েন):**\n\n"
         for key, coin in COIN_CONFIGS.items():
@@ -87,7 +84,6 @@ async def handle_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
         keyboard = [[InlineKeyboardButton("🔙 Back to Main Menu", callback_data="main_menu")]]
         await query.edit_message_text(rates_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
-    # ৩. কয়েন বিক্রির মেনু (Coin Selection)
     elif data == "menu_sell":
         keyboard = []
         for key, coin in COIN_CONFIGS.items():
@@ -99,135 +95,210 @@ async def handle_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
         sell_text = "🛒 **কোন কয়েনটি বিক্রি করতে চান বেছে নিন:**\n*(সর্বনিম্ন পরিমাণ: ৫০,০০০ কয়েন)*"
         await query.edit_message_text(sell_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
-    # ৪. নির্দিষ্ট কয়েন সিলেক্ট করলে
     elif data.startswith("sell_"):
         coin_key = data.split("_")[1]
         coin = COIN_CONFIGS.get(coin_key)
         context.user_data["selected_coin"] = coin_key
 
         if coin_key == "topfollows":
-            instruction = f"👉 কুপন কোড তৈরি করে রাখুন এবং অ্যাডমিন ইউজারনেমে পাঠান: `{coin['target']}`"
+            instruction = f"👉 কুপন কোড তৈরি করে রাখুন এবং এডমিন ইউজারনেমে পাঠান: `{coin['target']}`"
         else:
             instruction = f"👉 গেম থেকে এই ইউজারনেমে কয়েন ট্রান্সফার করুন: `{coin['target']}`"
 
         text = (
             f"✅ **আপনি বেছে নিয়েছেন: {coin['label']}**\n"
-            f"💰 রেট: {coin['price']} ৳ (প্রতি ১,০০০০)\n"
+            f"💰 রেট: {coin['price']} ৳ (প্রতি ১,০০০)\n"
             f"📌 ফি: {DEFAULT_FEE} ৳\n\n"
             f"{instruction}\n\n"
             "ধাপ ১: কত পরিমাণ কয়েন সেল করতে চান নিচে লিখুন (যেমন: 50000):"
         )
-        
-        # ইউজারের রেসপন্স নেওয়ার জন্য স্টেট সেট
         context.user_data["step"] = "AWAITING_AMOUNT"
-        
         keyboard = [[InlineKeyboardButton("❌ Cancel", callback_data="menu_sell")]]
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
-    # ৫. লিডারবোর্ড
-    elif data == "menu_leaderboard":
-        lb_text = (
-            "🏆 **Top Sellers Leaderboard**\n\n"
-            "🥇 1. User_982 - 45 Sells\n"
-            "🥈 2. TradingKing - 32 Sells\n"
-            "🥉 3. AlexBD - 28 Sells\n\n"
-            "💡 সম্পূর্ণ লিডারবোর্ড দেখতে নিচের **Open Full Web App** বাটনটি ব্যবহার করুন।"
-        )
-        keyboard = [[InlineKeyboardButton("🔙 Back to Main Menu", callback_data="main_menu")]]
-        await query.edit_message_text(lb_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+    # --- এডমিন অ্যাকশন (Accept / Reject) ---
+    elif data.startswith("admin_accept_") or data.startswith("admin_reject_"):
+        if user_id != ADMIN_TELEGRAM_ID:
+            await query.answer("⚠️ আপনি এডমিন নন!", show_alert=True)
+            return
 
-    # ৬. হিস্ট্রি
-    elif data == "menu_history":
-        history_text = (
-            "📜 **আপনার সাম্প্রতিক লেনদেন:**\n\n"
-            "• Niva Coin | 50K | 245 ৳ | ✅ Accepted\n"
-            "• Ns Coin | 100K | 795 ৳ | ⏳ Pending\n"
-        )
-        keyboard = [[InlineKeyboardButton("🔙 Back to Main Menu", callback_data="main_menu")]]
-        await query.edit_message_text(history_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+        action, req_id = data.rsplit("_", 1)
+        req_id = int(req_id)
+        req = pending_requests.get(req_id)
 
-# --- ৪. ইউজারের ডাটা ইনপুট প্রসেস (অ্যামাউন্ট ও নগদ নম্বর নেওয়া) ---
+        if not req:
+            await query.edit_message_text(query.message.text + "\n\n⚠️ **এই রিকোয়েস্টটি আগেই প্রসেস করা হয়েছে।**")
+            return
+
+        target_user_id = req["user_id"]
+
+        if action == "admin_accept":
+            # এডমিন একসেপ্ট করলে ইউজারকে মেসেজ
+            user_msg = (
+                "✅ **আপনার কয়েন সেল রিকোয়েস্ট সফলভাবে একসেপ্ট করা হয়েছে!**\n\n"
+                f"💰 **টাকা:** {req['net_taka']} ৳\n"
+                f"📱 **নগদ নম্বর:** `{req['nagad_number']}`\n"
+                "আপনার নগদ নম্বরে পেমেন্ট সফলভাবে পাঠানো হয়েছে। Earning Elevated-এর সাথে থাকার জন্য ধন্যবাদ!"
+            )
+            await context.bot.send_message(chat_id=target_user_id, text=user_msg, parse_mode="Markdown")
+            await query.edit_message_text(query.message.text + "\n\n✅ **ACCEPTED and Payment Status Sent to User!**")
+
+        elif action == "admin_reject":
+            # এডমিন রিজেক্ট করলে ইউজারকে মেসেজ
+            user_msg = (
+                "❌ **আপনার কয়েন সেল রিকোয়েস্টটি বাতিল (Rejected) করা হয়েছে।**\n\n"
+                "সম্ভাব্য কারণ: কয়েন ট্রান্সফার/কুপন কোড ভেরিফিকেশন ব্যর্থ হয়েছে। "
+                "যেকোনো সমস্যায় এডমিনের সাথে যোগাযোগ করুন: @educationpointbd24"
+            )
+            await context.bot.send_message(chat_id=target_user_id, text=user_msg, parse_mode="Markdown")
+            await query.edit_message_text(query.message.text + "\n\n❌ **REJECTED and User Notified.**")
+
+        # মেমোরি থেকে রিকোয়েস্ট রিমুভ করা
+        del pending_requests[req_id]
+
+    # --- এডমিন প্রাইস চেঞ্জ মেনু ---
+    elif data.startswith("change_price_"):
+        if user_id != ADMIN_TELEGRAM_ID:
+            return
+        coin_key = data.split("_")[2]
+        context.user_data["admin_step"] = "AWAITING_NEW_PRICE"
+        context.user_data["admin_coin"] = coin_key
+        await query.edit_message_text(f"✏️ **{COIN_CONFIGS[coin_key]['label']}**-এর নতুন দাম প্রতি ১০০০ কয়েনের জন্য কত দিতে চান? (সংখ্যা লিখুন):", parse_mode="Markdown")
+
+# --- ৪. ইউজার ইনপুট ও সেল রিকোয়েস্ট এডমিনের কাছে পাঠানো ---
 
 async def handle_user_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """ইউজার টেক্সট মেসেজ পাঠালে তা প্রসেস করা"""
+    user_id = update.effective_user.id
+    text = update.message.text.strip()
     step = context.user_data.get("step")
-    
+    admin_step = context.user_data.get("admin_step")
+
+    # --- এডমিন প্রাইস আপডেট প্রসেস ---
+    if user_id == ADMIN_TELEGRAM_ID and admin_step == "AWAITING_NEW_PRICE":
+        try:
+            new_price = float(text)
+            coin_key = context.user_data.get("admin_coin")
+            COIN_CONFIGS[coin_key]["price"] = new_price
+            context.user_data["admin_step"] = None
+            await update.message.reply_text(f"✅ **{COIN_CONFIGS[coin_key]['label']}**-এর দাম সফলভাবে আপডেট করা হয়েছে: `{new_price} ৳`", parse_mode="Markdown")
+            return
+        except ValueError:
+            await update.message.reply_text("⚠️ অনুগ্রহ করে সঠিক দাম লিখুন (যেমন: 6.5):")
+            return
+
     if not step:
         return
 
-    # পরিমাণ ইনপুট নেওয়া
+    # ১. অ্যামাউন্ট নেওয়া
     if step == "AWAITING_AMOUNT":
         try:
-            amount = int(update.message.text.strip())
+            amount = int(text)
             if amount < MIN_AMOUNT:
-                await update.message.reply_text(f"⚠️ সর্বনিম্ন পরিমাণ {MIN_AMOUNT} কয়েন। আবার চেষ্টা করুন:")
+                await update.message.reply_text(f"⚠️ সর্বনিম্ন পরিমাণ {MIN_AMOUNT} কয়েন। আবার লিখুন:")
                 return
-            
             context.user_data["amount"] = amount
             coin_key = context.user_data["selected_coin"]
-            
+
             if coin_key == "topfollows":
                 context.user_data["step"] = "AWAITING_COUPON"
                 await update.message.reply_text("ধাপ ২: আপনার **Topfollows Coupon Code** টি লিখুন:")
             else:
                 context.user_data["step"] = "AWAITING_SENDER"
                 await update.message.reply_text("ধাপ ২: আপনি যে ইউজারনেম/আইডি থেকে কয়েন পাঠিয়েছেন তা লিখুন:")
-        
         except ValueError:
-            await update.message.reply_text("⚠️ অনুগ্রহ করে সঠিক সংখ্যা লিখুন (যেমন: 50000):")
+            await update.message.reply_text("⚠️ অনুগ্রহ করে সংখ্যা লিখুন (যেমন: 50000):")
 
-    # ইউজারনেম / কুপন কোড ইনপুট নেওয়া
+    # ২. ইউজারনেম/কুপন নেওয়া
     elif step in ["AWAITING_SENDER", "AWAITING_COUPON"]:
-        context.user_data["sender_info"] = update.message.text.strip()
+        context.user_data["sender_info"] = text
         context.user_data["step"] = "AWAITING_NAGAD"
         await update.message.reply_text("ধাপ ৩: পেমেন্ট নেওয়ার জন্য আপনার **নগদ (Nagad)** নম্বরটি দিন:")
 
-    # নগদ নম্বর নেওয়া এবং রিকোয়েস্ট নিশ্চিত করা
+    # ৩. নগদ নম্বর ও এডমিনের কাছে সেল রিকোয়েস্ট পাঠানো
     elif step == "AWAITING_NAGAD":
-        nagad_number = update.message.text.strip()
+        nagad_number = text
         coin_key = context.user_data["selected_coin"]
         coin = COIN_CONFIGS[coin_key]
         amount = context.user_data["amount"]
         sender_info = context.user_data["sender_info"]
-        
-        # হিসাব কষা (Taka Calculation)
+
         amount_k = amount / 1000
         gross_taka = amount_k * coin["price"]
         net_taka = max(0, gross_taka - DEFAULT_FEE)
-        
-        # স্টেট ক্লিয়ার করা
+
         context.user_data["step"] = None
 
-        summary_text = (
-            "✅ **আপনার সেল রিকোয়েস্ট তৈরি হয়েছে!**\n\n"
-            f"🔹 **কয়েন:** {coin['label']}\n"
-            f"🔹 **পরিমাণ:** {amount_k}K ({amount} Coins)\n"
-            f"🔹 **প্রেরক/কুপন:** `{sender_info}`\n"
-            f"🔹 **নগদ নম্বর:** `{nagad_number}`\n"
-            f"💰 **আপনি পাবেন:** `{net_taka} ৳` (ফি ৫৳ কাটার পর)\n\n"
-            "⏳ অ্যাডমিন ভেরিফাই করে আপনার নগদ নম্বরে পেমেন্ট পাঠিয়ে দেবে।"
+        # ইউজারের কাছে মেসেজ
+        await update.message.reply_text(
+            "⏳ **আপনার রিকোয়েস্টটি সাবমিট হয়েছে!**\n\n"
+            "এডমিন কয়েন ভেরিফাই করে পেমেন্ট পাঠিয়ে দেবে এবং আপনাকে জানিয়ে দেওয়া হবে।",
+            reply_markup=get_main_keyboard(),
+            parse_mode="Markdown"
         )
-        
-        keyboard = [
-            [InlineKeyboardButton("💬 Message Admin", url="https://t.me/educationpointbd24")],
-            [InlineKeyboardButton("🔙 Main Menu", callback_data="main_menu")]
-        ]
-        
-        await update.message.reply_text(summary_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
-# --- ৫. মেইন রানার ---
+        # ইউনিক রিকোয়েস্ট আইডি
+        req_id = update.message.message_id
+        pending_requests[req_id] = {
+            "user_id": user_id,
+            "user_name": update.effective_user.first_name,
+            "username": update.effective_user.username or "N/A",
+            "coin_label": coin["label"],
+            "amount": amount,
+            "sender_info": sender_info,
+            "nagad_number": nagad_number,
+            "net_taka": net_taka,
+        }
+
+        # --- এডমিন বক্সে পুরো ডাটা পাঠানো ---
+        admin_notice = (
+            "🚨 **নতুন কয়েন সেল রিকোয়েস্ট এসেছে!**\n\n"
+            f"👤 **ইউজার:** {update.effective_user.first_name} (@{update.effective_user.username or 'N/A'})\n"
+            f"🆔 **Telegram UID:** `{user_id}`\n"
+            f"🪙 **কয়েন:** {coin['label']}\n"
+            f"📦 **পরিমাণ:** {amount_k}K ({amount})\n"
+            f"📩 **প্রেরক/কুপন:** `{sender_info}`\n"
+            f"📱 **নগদ নম্বর:** `{nagad_number}`\n"
+            f"💰 **পেমেন্ট করতে হবে:** `{net_taka} ৳`\n\n"
+            "⚠️ আসল নাকি নকল ভেরিফাই করে নিচে বাটন চাপুন:"
+        )
+
+        admin_keyboard = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("✅ Accept & Pay", callback_data=f"admin_accept_{req_id}"),
+                InlineKeyboardButton("❌ Reject", callback_data=f"admin_reject_{req_id}"),
+            ]
+        ])
+
+        await context.bot.send_message(chat_id=ADMIN_TELEGRAM_ID, text=admin_notice, reply_markup=admin_keyboard, parse_mode="Markdown")
+
+# --- ৫. এডমিন প্যানেল কমান্ড (`/admin`) ---
+
+async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if user_id != ADMIN_TELEGRAM_ID:
+        await update.message.reply_text("❌ আপনি এডমিন নন।")
+        return
+
+    admin_text = "⚙️ **Admin Panel - Earning Elevated**\n\nকোন কয়েনের দাম পরিবর্তন করতে চান বেছে নিন:"
+    keyboard = []
+    for key, coin in COIN_CONFIGS.items():
+        keyboard.append([InlineKeyboardButton(f"✏️ {coin['label']} ({coin['price']}৳)", callback_data=f"change_price_{key}")])
+
+    await update.message.reply_text(admin_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+
+# --- ৬. মেইন বোটিং ---
 
 def main():
     app = Application.builder().token(BOT_TOKEN).build()
 
-    # হ্যান্ডলার রেজিস্টার
     app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("admin", admin_panel))  # এডমিন প্যানেল কমান্ড
     app.add_handler(CallbackQueryHandler(handle_callbacks))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_user_input))
 
-    print("Earning Elevated Bot is running...")
+    print("Earning Elevated Admin Bot is Running...")
     app.run_polling()
 
 if __name__ == "__main__":
     main()
-      
+        
