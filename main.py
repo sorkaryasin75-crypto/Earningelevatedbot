@@ -10,7 +10,7 @@ from telegram.ext import (
 )
 
 # --- ১. কনফিগারেশন ---
-BOT_TOKEN = "8868300612:AAH33rOPD7g-1s8dycSIdsNGZsOgZdPnqo0"  # আপনার বট টোকেন দিন
+BOT_TOKEN = "8312396498:AAF07jeC_2wJSxb1mVxfocwHEXJvCyz3DQ4"  # আপনার বট টোকেন দিন
 ADMIN_TELEGRAM_ID = 6582650458  # আপনার টেলিগ্রাম UID
 WEB_APP_URL = "https://economyshops.blogspot.com"
 
