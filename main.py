@@ -16,10 +16,10 @@ WEB_APP_URL = "https://economyshops.blogspot.com"
 
 # ওয়েব অ্যাপ অনুযায়ী কয়েন কনফিগারেশন (মেমোরিতে সেভ থাকবে এবং এডমিন চেঞ্জ করতে পারবে)
 COIN_CONFIGS = {
-    "niva": {"label": "Niva Coin", "price": 5, "target": "@sell_point_it", "active": True},
-    "NewTop": {"label": "NewTop Coin", "price": 3, "target": "@Send", "active": True},
-    "topfollows": {"label": "topfollows", "price": 3, "target": "@topfollowsadmin", "active": True},
-    "ns": {"label": "Ns Coin", "price": 8, "target": "@NsCoinAdmin", "active": True},
+    "niva": {"label": "Niva Coin", "price": 4.65, "target": "@sell_point_it", "active": True},
+    "NewTop": {"label": "NewTop Coin", "price": 4.20, "target": "@Send", "inactive": True},
+    "topfollows": {"label": "topfollows", "price": 4.70, "target": "@topfollowsadmin", "active": True},
+    "ns": {"label": "Ns Coin", "price": 12, "target": "@himelorkar019", "active": True},
 }
 
 DEFAULT_FEE = 5
@@ -103,7 +103,7 @@ async def handle_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if coin_key == "topfollows":
             instruction = f"👉 কুপন কোড তৈরি করে রাখুন এবং এডমিন ইউজারনেমে পাঠান: `{coin['target']}`"
         else:
-            instruction = f"👉 গেম থেকে এই ইউজারনেমে কয়েন ট্রান্সফার করুন: `{coin['target']}`"
+            instruction = f"👉 অ্যাপস থেকে এই ইউজারনেমে কয়েন ট্রান্সফার করুন: `{coin['target']}`"
 
         text = (
             f"✅ **আপনি বেছে নিয়েছেন: {coin['label']}**\n"
@@ -137,8 +137,8 @@ async def handle_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
             user_msg = (
                 "✅ **আপনার কয়েন সেল রিকোয়েস্ট সফলভাবে একসেপ্ট করা হয়েছে!**\n\n"
                 f"💰 **টাকা:** {req['net_taka']} ৳\n"
-                f"📱 **নগদ নম্বর:** `{req['nagad_number']}`\n"
-                "আপনার নগদ নম্বরে পেমেন্ট সফলভাবে পাঠানো হয়েছে। Earning Elevated-এর সাথে থাকার জন্য ধন্যবাদ!"
+                f"📱 **বিকাশ নম্বর:** `{req['bkash_number']}`\n"
+                "আপনার বিকাশ নম্বরে পেমেন্ট সফলভাবে পাঠানো হয়েছে। Earning Elevated-এর সাথে থাকার জন্য ধন্যবাদ!"
             )
             await context.bot.send_message(chat_id=target_user_id, text=user_msg, parse_mode="Markdown")
             await query.edit_message_text(query.message.text + "\n\n✅ **ACCEPTED and Payment Status Sent to User!**")
@@ -212,11 +212,11 @@ async def handle_user_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif step in ["AWAITING_SENDER", "AWAITING_COUPON"]:
         context.user_data["sender_info"] = text
         context.user_data["step"] = "AWAITING_NAGAD"
-        await update.message.reply_text("ধাপ ৩: পেমেন্ট নেওয়ার জন্য আপনার **নগদ (Nagad)** নম্বরটি দিন:")
+        await update.message.reply_text("ধাপ ৩: পেমেন্ট নেওয়ার জন্য আপনার **বিকাশ (Bkash)** নম্বরটি দিন:")
 
-    # ৩. নগদ নম্বর ও এডমিনের কাছে সেল রিকোয়েস্ট পাঠানো
+    # ৩. বিকাশ নম্বর ও এডমিনের কাছে সেল রিকোয়েস্ট পাঠানো
     elif step == "AWAITING_NAGAD":
-        nagad_number = text
+        bkash_number = text
         coin_key = context.user_data["selected_coin"]
         coin = COIN_CONFIGS[coin_key]
         amount = context.user_data["amount"]
@@ -245,7 +245,7 @@ async def handle_user_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "coin_label": coin["label"],
             "amount": amount,
             "sender_info": sender_info,
-            "nagad_number": nagad_number,
+            "bkash_number": bkash_number,
             "net_taka": net_taka,
         }
 
@@ -257,7 +257,7 @@ async def handle_user_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"🪙 **কয়েন:** {coin['label']}\n"
             f"📦 **পরিমাণ:** {amount_k}K ({amount})\n"
             f"📩 **প্রেরক/কুপন:** `{sender_info}`\n"
-            f"📱 **নগদ নম্বর:** `{nagad_number}`\n"
+            f"📱 **বিকাশ নম্বর:** `{bkash_number}`\n"
             f"💰 **পেমেন্ট করতে হবে:** `{net_taka} ৳`\n\n"
             "⚠️ আসল নাকি নকল ভেরিফাই করে নিচে বাটন চাপুন:"
         )
